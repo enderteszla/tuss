@@ -1,4 +1,4 @@
-__all__ = ['construct_element', 'new_fitness', 'mul_fitness', 'add_fitness']
+__all__ = ['construct_element']
 
 construct_element = lambda element_type, **kwargs: {
     'Router': Router,
@@ -28,7 +28,7 @@ class Node(Element):
     def __init__(self, node_type, **kwargs):
         super(Node, self).__init__(node_type, **kwargs)
         self.get('general_index', **kwargs).get('link_index', **kwargs).get('network_index', **kwargs)
-        self.register('t0').register('A')
+        self.register('t0')
 
 
 class Router(Node):
@@ -52,10 +52,3 @@ class Edge(Element):
     def __init__(self, **kwargs):
         super(Edge, self).__init__("Edge", **kwargs)
         self.get('source', **kwargs).get('target', **kwargs)
-
-
-# Fitness function computation
-new_fitness = lambda function, chromosome, element: lambda t: function(chromosome, element, t)
-mul_fitness = lambda fitness, other: lambda t: fitness(t) * other(t)
-add_fitness = lambda fitness, others: fitness if len(others) == 0 else lambda t: fitness(t) + \
-    reduce(lambda a, b: a + b, [other(t) for i, other in enumerate(others)], 0) / len(others)
