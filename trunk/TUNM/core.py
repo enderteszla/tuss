@@ -1,8 +1,10 @@
-__all__ = ['TypicalUnifiedNetworkModel']
+# import accessories
+from aux import *
+from defaults import *
+
 import networkx as nx
-import random
-from TUNMclasses import *
-from deap import creator, base, tools
+from GA import *
+
 
 """ Definitions & Declarations of the Model:
 (In English only - since non-ASCII characters not provided.)
@@ -36,6 +38,26 @@ The Firewall should introduce the commutation map (yet it may not be implemented
 """
 
 
+def generate_lambda(function, **kwargs):
+    return lambda *args: function(*args, **kwargs)
+
+
+def cutoff(offspring, bounds_array):
+    for child in offspring:
+        for i in xrange(len(child)):
+            if child[i] > bounds_array[i]['right']:
+                child[i] = bounds_array[i]['right']
+            elif child[i] < bounds_array[i]['left']:
+                child[i] = bounds_array[i]['left']
+    return offspring
+
+# Fitness function computation
+new_fitness = lambda function, chromosome, element: lambda t: function(chromosome, element, t)
+mul_fitness = lambda fitness, other: lambda t: fitness(t) * other(t)
+sum_fitness = lambda functions: (lambda t: 1) if len(functions) == 0 else lambda t: \
+    reduce(lambda a, b: a + b, [function(t) for i, function in enumerate(functions)], 0) / len(functions)
+
+
 # The Model itself
 class TypicalUnifiedNetworkModel(object):
     def __init__(self, **kwargs):
@@ -43,8 +65,46 @@ class TypicalUnifiedNetworkModel(object):
         self.link_graph = None
         self.network_graph = None
         self.chromosome_template = []
+
         self.node_fitness = kwargs.get('node_fitness')
         self.edge_fitness = kwargs.get('edge_fitness')
+        self.threshold = kwargs.get('threshold')
+
+        self.initials = initials
+        self.bounds = bounds
+        self.time = time
+
+        self.init_chromosome = lambda: \
+            [self.initials[entry['type']][entry['field']] for i, entry in enumerate(self.chromosome_template)]
+        self.check_bounds = lambda func: \
+            lambda *args, **kw_args: \
+            cutoff(
+                func(*args, **kw_args),
+                [self.bounds[entry['type']][entry['field']] for i, entry in enumerate(self.chromosome_template)]
+            )
+        self.evaluate = lambda t: (lambda chromosome: (abs(self.threshold - self.fitness(chromosome)(t)),))
+
+        self.ga = lambda **kw_args: GA(
+            init_chromosome=self.init_chromosome,
+            check_bounds=self.check_bounds,
+            evaluate_chromosome=self.evaluate(self.time),
+            **kw_args
+        )
+
+    def set_threshold(self, value):
+        self.threshold = value
+        return self
+
+    def set_initials(self, value):
+        self.initials = value
+        return self
+
+    def set_bounds(self, value):
+        self.bounds = value
+        return self
+
+    def set_time(self, value):
+        self.time = value
 
     def add_node(self, node=None, connect_to=None, node_type=None, **kwargs):
         if node is None:
@@ -70,6 +130,7 @@ class TypicalUnifiedNetworkModel(object):
             edge = construct_element("Edge", chromosome_template=self.chromosome_template, **data)
             data.clear()
             data['edge'] = edge
+        return self
 
     def write_graphml(self, path):
         for i, data in self.general_graph.nodes_iter(data=True):
@@ -86,64 +147,12 @@ class TypicalUnifiedNetworkModel(object):
         return self
 
     def fitness(self, chromosome, node_index='0'):
-        return add_fitness(
-            new_fitness(self.node_fitness, chromosome, self.general_graph.node[node_index]['node']), [
+        return mul_fitness(
+            new_fitness(self.node_fitness, chromosome, self.general_graph.node[node_index]['node']),
+            sum_fitness([
                 mul_fitness(
                     new_fitness(self.edge_fitness, chromosome, self.general_graph.edge[i][node_index]['edge']),
                     self.fitness(chromosome, i))
                 for i in self.general_graph.predecessors_iter(node_index)
-            ]
+            ])
         )
-
-    def ga(self, defaults):
-        creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
-        creator.create("Individual", list, fitness=creator.FitnessMin)
-        toolbox = base.Toolbox()
-        toolbox.register(
-            "population_guess",
-            lambda pcls, ind_init, chromosome_template: pcls(ind_init(c) for c in [
-                defaults[entry['type']][entry['field']] for i, entry in enumerate(chromosome_template)
-
-            ]),
-            list,
-            creator.Individual,
-            self.chromosome_template
-        )
-        toolbox.register("mate", tools.cxTwoPoint)
-        toolbox.register("mutate", tools.mutGaussian, mu=0, sigma=1, indpb=0.1)
-        toolbox.register("select", tools.selTournament, tournsize=3)
-        toolbox.register("evaluate", lambda chromosome: self.fitness(chromosome)(10))
-
-        population = toolbox.population_guess()
-        CXPB, MUTPB, NGEN = 0.5, 0.2, 40
-        # Evaluate the entire population
-        fitnesses = map(toolbox.evaluate, population)
-        for ind, fit in zip(population, fitnesses):
-            ind.fitness.values = fit
-        for g in range(NGEN):
-            # Select the next generation individuals
-            offspring = toolbox.select(population, len(population))
-            # Clone the selected individuals
-            offspring = map(toolbox.clone, offspring)
-
-            # Apply crossover and mutation on the offspring
-            for child1, child2 in zip(offspring[::2], offspring[1::2]):
-                if random.random() < CXPB:
-                    toolbox.mate(child1, child2)
-                    del child1.fitness.values
-                    del child2.fitness.values
-
-            for mutant in offspring:
-                if random.random() < MUTPB:
-                    toolbox.mutate(mutant)
-                    del mutant.fitness.values
-
-            # Evaluate the individuals with an invalid fitness
-            invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
-            fitnesses = map(toolbox.evaluate, invalid_ind)
-            for ind, fit in zip(invalid_ind, fitnesses):
-                ind.fitness.values = fit
-
-            # The population is entirely replaced by the offspring
-            population[:] = offspring
-        return population
