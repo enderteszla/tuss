@@ -11,6 +11,6 @@ defaults = {
     'mateProbability': 0.5,
     'mutateProbability': 0.2,
     'generationsNumber': 40,
-    'epsilon': 0.01,
+    'epsilon': 0.005,
     'populationSize': 50
 }
