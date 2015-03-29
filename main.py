@@ -8,7 +8,7 @@ model = TypicalUnifiedNetworkModel(
     node_fitness=lambda chromosome, node, t: 1 if t > chromosome[node.t0] else
     2. - math.pow(2., t / chromosome[node.t0]),
     edge_fitness=lambda chromosome, edge, t: 1,
-    threshold=0.95
+    threshold=0.94
 )
 model.read_graphml("reference.graphml")
 
